@@ -70,35 +70,39 @@ for col in categorical_cols:
     print(combined.to_string())
 
 # Gráfico mejorado con títulos y etiquetas claras
-fig, axes = plt.subplots(3, 3, figsize=(18, 12))
+fig, axes = plt.subplots(2, 4, figsize=(20, 10))
 fig.suptitle('Distribución de Variables Categóricas en el Dataset de Viviendas', 
              fontsize=16, fontweight='bold', y=0.98)
 
 for i, col in enumerate(categorical_cols):
-    row = i // 3
-    col_idx = i % 3
+    row = i // 4
+    col_idx = i % 4
     ax = axes[row, col_idx]
     
     counts = df[col].value_counts()
-    bars = ax.bar(counts.index, counts.values, alpha=0.8, edgecolor='black', linewidth=0.5)
+    colors = plt.cm.Set3(np.linspace(0, 1, len(counts)))
+    bars = ax.bar(counts.index, counts.values, alpha=0.8, edgecolor='black', 
+                  linewidth=0.5, color=colors)
     
     # Añadir valores en las barras
     for bar in bars:
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width()/2., height + 5,
+        ax.text(bar.get_x() + bar.get_width()/2., height + max(counts.values)*0.01,
                 f'{int(height)}', ha='center', va='bottom', fontweight='bold')
     
     ax.set_title(f'{col.replace("_", " ").title()}', fontsize=12, fontweight='bold', pad=10)
     ax.set_xlabel('Categorías', fontsize=10, fontweight='bold')
     ax.set_ylabel('Número de Viviendas', fontsize=10, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim(0, max(counts.values) * 1.1)
     
     # Rotar etiquetas si son largas
-    if len(str(counts.index[0])) > 5:
+    max_label_length = max([len(str(label)) for label in counts.index])
+    if max_label_length > 8:
         ax.tick_params(axis='x', rotation=45)
 
-# Eliminar subplot vacío
-axes[2, 2].remove()
+# Eliminar subplot vacío (último)
+axes[1, 3].remove()
 
 plt.tight_layout()
 plt.subplots_adjust(top=0.93)
@@ -152,34 +156,47 @@ for stat, value in price_stats.items():
     print(f"  • {stat}: ${value:,.2f}")
 
 # Crear bins más informativos
-n_bins = 25
+n_bins = int(np.sqrt(len(df))) + 5  # Regla de Sturges modificada
 plt.figure(figsize=(14, 8))
 
 # Histograma con más detalle
-n, bins, patches = plt.hist(df['price'], bins=n_bins, alpha=0.7, color='skyblue', 
+counts, bins, patches = plt.hist(df['price'], bins=n_bins, alpha=0.7, color='skyblue', 
                            edgecolor='black', linewidth=0.5, density=True)
+
+# Colorear barras según altura para mejor visualización
+cm = plt.cm.viridis
+for i, (count, patch) in enumerate(zip(counts, patches)):
+    patch.set_facecolor(cm(count / max(counts)))
 
 # Curva de densidad
 kde_x = np.linspace(df['price'].min(), df['price'].max(), 100)
 kde = stats.gaussian_kde(df['price'])
-plt.plot(kde_x, kde(kde_x), 'r-', linewidth=2, label='Curva de Densidad (KDE)')
+plt.plot(kde_x, kde(kde_x), 'r-', linewidth=3, label='Curva de Densidad (KDE)')
 
 # Líneas de referencia
 plt.axvline(df['price'].mean(), color='red', linestyle='--', linewidth=2, 
-           label=f'Media: ${df["price"].mean():,.0f}')
+           label=f'Media: ${df["price"].mean():,.0f}', alpha=0.8)
 plt.axvline(df['price'].median(), color='green', linestyle='--', linewidth=2, 
-           label=f'Mediana: ${df["price"].median():,.0f}')
+           label=f'Mediana: ${df["price"].median():,.0f}', alpha=0.8)
+
+# Añadir área sombreada para mostrar distribución
+plt.fill_between(kde_x, kde(kde_x), alpha=0.2, color='red')
 
 plt.title('Distribución de Precios de Viviendas\n(Histograma con Curva de Densidad)', 
           fontsize=14, fontweight='bold', pad=20)
 plt.xlabel('Precio de la Vivienda (USD)', fontsize=12, fontweight='bold')
 plt.ylabel('Densidad de Probabilidad', fontsize=12, fontweight='bold')
-plt.legend(fontsize=10)
+plt.legend(fontsize=11, loc='upper right')
 plt.grid(axis='y', alpha=0.3)
 
 # Formato de números en el eje x
 ax = plt.gca()
-ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000:.0f}K'))
+ax.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000000:.1f}M' if x >= 1000000 else f'${x/1000:.0f}K'))
+
+# Añadir estadísticas en el gráfico
+stats_text = f'n = {len(df)}\nMedia = ${df["price"].mean():,.0f}\nMediana = ${df["price"].median():,.0f}\nDesv. Est. = ${df["price"].std():,.0f}'
+plt.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=10,
+         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
 
 plt.tight_layout()
 plt.show()
@@ -214,29 +231,44 @@ plt.figure(figsize=(12, 6))
 
 # Q-Q plot
 plt.subplot(1, 2, 1)
-stats.probplot(df['price'], dist="norm", plot=plt)
+res = stats.probplot(df['price'], dist="norm", plot=plt.gca())
+# Obtener la línea de referencia
+slope, intercept, r_value = res[1]
+plt.plot(res[0][0], slope * res[0][0] + intercept, 'r-', linewidth=2, alpha=0.8, label='Línea de Referencia')
+
 plt.title('Gráfico Q-Q: Precios vs Distribución Normal\n(Análisis de Normalidad)', 
           fontsize=12, fontweight='bold')
 plt.xlabel('Cuantiles Teóricos (Distribución Normal)', fontsize=10, fontweight='bold')
 plt.ylabel('Cuantiles Observados (Precios)', fontsize=10, fontweight='bold')
 plt.grid(alpha=0.3)
+plt.legend()
+
+# Añadir R² en el gráfico
+plt.text(0.05, 0.95, f'R² = {r_value**2:.4f}', transform=plt.gca().transAxes, 
+         fontsize=11, bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
 
 # Histograma comparativo
 plt.subplot(1, 2, 2)
-plt.hist(df['price'], bins=30, density=True, alpha=0.7, color='lightblue', 
+actual_counts, actual_bins, _ = plt.hist(df['price'], bins=25, density=True, alpha=0.7, color='lightblue', 
          edgecolor='black', label='Datos Observados')
 
 # Distribución normal teórica
 mu, sigma = df['price'].mean(), df['price'].std()
-x = np.linspace(df['price'].min(), df['price'].max(), 100)
+x = np.linspace(df['price'].min(), df['price'].max(), 200)
 normal_dist = stats.norm.pdf(x, mu, sigma)
-plt.plot(x, normal_dist, 'r-', linewidth=2, label='Distribución Normal Teórica')
+plt.plot(x, normal_dist, 'r-', linewidth=3, label='Distribución Normal Teórica')
+
+# Sombrear área bajo la curva normal
+plt.fill_between(x, normal_dist, alpha=0.2, color='red')
 
 plt.title('Comparación: Datos vs Distribución Normal', fontsize=12, fontweight='bold')
-plt.xlabel('Precio de la Vivienda', fontsize=10, fontweight='bold')
+plt.xlabel('Precio de la Vivienda (USD)', fontsize=10, fontweight='bold')
 plt.ylabel('Densidad', fontsize=10, fontweight='bold')
-plt.legend()
+plt.legend(loc='upper right')
 plt.grid(alpha=0.3)
+
+# Formato del eje X
+plt.gca().xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000000:.1f}M' if x >= 1000000 else f'${x/1000:.0f}K'))
 
 plt.tight_layout()
 plt.show()
@@ -298,7 +330,7 @@ for col, info in outlier_info.items():
         print(f"  • Valores atípicos: {info['outliers']}")
 
 # Boxplot mejorado
-fig, axes = plt.subplots(2, 3, figsize=(18, 12))
+fig, axes = plt.subplots(2, 3, figsize=(20, 12))
 fig.suptitle('Diagramas de Caja para Variables Numéricas\n(Detección de Valores Atípicos)', 
              fontsize=16, fontweight='bold', y=0.98)
 
@@ -308,23 +340,42 @@ for i, col in enumerate(numeric_cols):
     ax = axes[row, col_idx]
     
     # Crear boxplot
-    bp = ax.boxplot(df[col], patch_artist=True, notch=True)
-    bp['boxes'][0].set_facecolor('lightblue')
+    bp = ax.boxplot(df[col], patch_artist=True, notch=True, showmeans=True)
+    bp['boxes'][0].set_facecolor('lightblue') 
     bp['boxes'][0].set_alpha(0.7)
+    bp['means'][0].set_marker('D')
+    bp['means'][0].set_markerfacecolor('red')
+    bp['means'][0].set_markeredgecolor('red')
+    bp['means'][0].set_markersize(8)
     
     # Añadir estadísticas
-    stats_text = f"Mediana: {df[col].median():.1f}\nIQR: {outlier_info[col]['IQR']:.1f}\nOutliers: {outlier_info[col]['n_outliers']}"
+    if col == 'price':
+        stats_text = f"Mediana: ${df[col].median():,.0f}\nIQR: ${outlier_info[col]['IQR']:,.0f}\nOutliers: {outlier_info[col]['n_outliers']}\nMedia: ${df[col].mean():,.0f}"
+    else:
+        stats_text = f"Mediana: {df[col].median():.1f}\nIQR: {outlier_info[col]['IQR']:.1f}\nOutliers: {outlier_info[col]['n_outliers']}\nMedia: {df[col].mean():.1f}"
+    
     ax.text(0.02, 0.98, stats_text, transform=ax.transAxes, fontsize=9,
             verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     ax.set_title(f'{col.replace("_", " ").title()}', fontsize=12, fontweight='bold')
-    ax.set_ylabel(f'Valores de {col.title()}', fontsize=10, fontweight='bold')
-    ax.set_xlabel('Variable', fontsize=10, fontweight='bold')
-    ax.grid(axis='y', alpha=0.3)
     
-    # Formato especial para precio
+    # Etiquetas específicas para cada variable
     if col == 'price':
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000:.0f}K'))
+        ax.set_ylabel('Precio de la Vivienda (USD)', fontsize=10, fontweight='bold')
+        ax.set_xlabel('Distribución de Precios', fontsize=10, fontweight='bold')
+        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000000:.1f}M' if x >= 1000000 else f'${x/1000:.0f}K'))
+    elif col == 'area':
+        ax.set_ylabel('Área de la Vivienda (pies²)', fontsize=10, fontweight='bold')
+        ax.set_xlabel('Distribución de Áreas', fontsize=10, fontweight='bold')
+    elif col in ['bedrooms', 'bathrooms', 'stories']:
+        ax.set_ylabel(f'Número de {col.title()}', fontsize=10, fontweight='bold')
+        ax.set_xlabel(f'Distribución de {col.title()}', fontsize=10, fontweight='bold')
+    elif col == 'parking':
+        ax.set_ylabel('Espacios de Estacionamiento', fontsize=10, fontweight='bold')
+        ax.set_xlabel('Distribución de Estacionamientos', fontsize=10, fontweight='bold')
+    
+    ax.grid(axis='y', alpha=0.3)
+    ax.set_xticklabels([col.title()])
 
 plt.tight_layout()
 plt.subplots_adjust(top=0.93)
@@ -361,15 +412,11 @@ print(f"  • Interpretación: {'Hay diferencias significativas' if p_val_anova 
 plt.figure(figsize=(14, 8))
 
 # Boxplot mejorado
-ax = sns.boxplot(x='furnishingstatus', y='price', data=df, palette='Set2')
+ax = sns.boxplot(x='furnishingstatus', y='price', data=df, palette='Set2', showmeans=True,
+                meanprops={"marker":"D","markerfacecolor":"red", "markeredgecolor":"red","markersize":8})
 
 # Añadir puntos de datos
-sns.stripplot(x='furnishingstatus', y='price', data=df, size=4, color='black', alpha=0.3)
-
-# Añadir medias
-means = df.groupby('furnishingstatus')['price'].mean()
-for i, (category, mean_val) in enumerate(means.items()):
-    ax.plot(i, mean_val, marker='D', color='red', markersize=8, label='Media' if i == 0 else "")
+sns.stripplot(x='furnishingstatus', y='price', data=df, size=3, color='black', alpha=0.4, jitter=True)
 
 plt.title('Distribución de Precios por Estado de Amueblado\n(Boxplot con Puntos de Datos)', 
           fontsize=14, fontweight='bold', pad=20)
@@ -377,9 +424,19 @@ plt.xlabel('Estado de Amueblado', fontsize=12, fontweight='bold')
 plt.ylabel('Precio de la Vivienda (USD)', fontsize=12, fontweight='bold')
 
 # Formato del eje Y
-ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000:.0f}K'))
+ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: f'${x/1000000:.1f}M' if x >= 1000000 else f'${x/1000:.0f}K'))
 
-plt.legend()
+# Añadir estadísticas por grupo
+for i, category in enumerate(['furnished', 'semi-furnished', 'unfurnished']):
+    group_data = df[df['furnishingstatus'] == category]['price']
+    median_val = group_data.median()
+    mean_val = group_data.mean()
+    
+    # Añadir texto con estadísticas
+    stats_text = f'n={len(group_data)}\nMediana=${median_val:,.0f}\nMedia=${mean_val:,.0f}'
+    ax.text(i, ax.get_ylim()[1] * 0.95, stats_text, ha='center', va='top', 
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8), fontsize=9)
+
 plt.grid(axis='y', alpha=0.3)
 plt.tight_layout()
 plt.show()
@@ -423,22 +480,48 @@ plt.figure(figsize=(12, 6))
 # Gráfico de barras para datos faltantes
 plt.subplot(1, 2, 1)
 if missing_data.sum() > 0:
-    missing_data[missing_data > 0].plot(kind='bar', color='salmon', alpha=0.8)
+    missing_cols = missing_data[missing_data > 0]
+    bars = plt.bar(range(len(missing_cols)), missing_cols.values, color='salmon', alpha=0.8)
+    plt.xticks(range(len(missing_cols)), missing_cols.index, rotation=45)
     plt.title('Datos Faltantes por Columna', fontsize=12, fontweight='bold')
-    plt.xlabel('Columnas del Dataset', fontsize=10, fontweight='bold')
+    plt.xlabel('Variables del Dataset', fontsize=10, fontweight='bold')
     plt.ylabel('Número de Valores Faltantes', fontsize=10, fontweight='bold')
+    
+    # Añadir valores en las barras
+    for bar, value in zip(bars, missing_cols.values):
+        plt.text(bar.get_x() + bar.get_width()/2., bar.get_height() + 0.1,
+                f'{int(value)}', ha='center', va='bottom', fontweight='bold')
 else:
-    plt.bar(range(len(df.columns)), [0]*len(df.columns), color='lightgreen', alpha=0.8)
+    bars = plt.bar(range(len(df.columns)), [0]*len(df.columns), color='lightgreen', alpha=0.8)
     plt.title('Datos Faltantes por Columna\n(Dataset Completo)', fontsize=12, fontweight='bold')
-    plt.xlabel('Columnas del Dataset', fontsize=10, fontweight='bold')
+    plt.xlabel('Variables del Dataset', fontsize=10, fontweight='bold')
     plt.ylabel('Número de Valores Faltantes', fontsize=10, fontweight='bold')
     plt.xticks(range(len(df.columns)), df.columns, rotation=45)
+    
+    # Añadir texto indicando que no hay datos faltantes
+    for i, bar in enumerate(bars):
+        plt.text(bar.get_x() + bar.get_width()/2., 0.5,
+                '0', ha='center', va='bottom', fontweight='bold', color='darkgreen')
 
 plt.grid(axis='y', alpha=0.3)
+plt.ylim(0, max(1, missing_data.max() * 1.1))
 
 # Matriz de completitud
 plt.subplot(1, 2, 2)
-msno.matrix(df, ax=plt.gca(), fontsize=8)
+try:
+    msno.matrix(df, ax=plt.gca(), fontsize=8)
+except:
+    # Si missingno falla, crear matriz manual
+    matrix_data = df.isnull().astype(int)
+    plt.imshow(matrix_data.T, cmap='RdYlBu', aspect='auto', interpolation='nearest')
+    plt.yticks(range(len(df.columns)), df.columns)
+    plt.xlabel('Observaciones (Filas del Dataset)', fontsize=10, fontweight='bold')
+    plt.ylabel('Variables (Columnas del Dataset)', fontsize=10, fontweight='bold')
+    
+    # Añadir colorbar
+    cbar = plt.colorbar()
+    cbar.set_label('0 = Dato Presente, 1 = Dato Faltante', rotation=270, labelpad=20)
+
 plt.title('Matriz de Completitud de Datos\n(Blanco = Faltante, Negro = Presente)', 
           fontsize=12, fontweight='bold')
 
@@ -496,18 +579,26 @@ plt.figure(figsize=(12, 10))
 
 # Crear heatmap mejorado
 mask = np.triu(np.ones_like(corr_matrix, dtype=bool))
-sns.heatmap(corr_matrix, annot=True, cmap='RdBu_r', center=0, 
+heatmap = sns.heatmap(corr_matrix, annot=True, cmap='RdBu_r', center=0, 
             square=True, fmt='.3f', cbar_kws={"shrink": .8},
-            mask=mask, linewidths=0.5)
+            mask=mask, linewidths=0.5, annot_kws={'size': 10})
 
 plt.title('Matriz de Correlación entre Variables Numéricas\n(Coeficiente de Correlación de Pearson)', 
           fontsize=14, fontweight='bold', pad=20)
-plt.xlabel('Variables del Dataset', fontsize=12, fontweight='bold')
-plt.ylabel('Variables del Dataset', fontsize=12, fontweight='bold')
+plt.xlabel('Variables Numéricas del Dataset de Viviendas', fontsize=12, fontweight='bold')
+plt.ylabel('Variables Numéricas del Dataset de Viviendas', fontsize=12, fontweight='bold')
+
+# Mejorar las etiquetas de los ejes
+plt.xticks(rotation=45, ha='right')
+plt.yticks(rotation=0)
+
+# Añadir barra de color personalizada
+cbar = heatmap.collections[0].colorbar
+cbar.set_label('Coeficiente de Correlación de Pearson (r)', rotation=270, labelpad=20, fontsize=11)
 
 # Añadir texto explicativo
-plt.figtext(0.02, 0.02, 'Interpretación: Azul = Correlación Positiva, Rojo = Correlación Negativa\nValores cercanos a ±1 indican correlación fuerte', 
-            fontsize=10, style='italic')
+plt.figtext(0.02, 0.02, 'Interpretación: Azul = Correlación Positiva (+), Rojo = Correlación Negativa (-)\nValores: +1 = Correlación perfecta positiva, -1 = Correlación perfecta negativa, 0 = Sin correlación', 
+            fontsize=9, style='italic', bbox=dict(boxstyle='round', facecolor='lightgray', alpha=0.8))
 
 plt.tight_layout()
 plt.show()
